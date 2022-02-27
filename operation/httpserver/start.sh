@@ -8,7 +8,7 @@ tag=${version}
 cd $(dirname $0)
 make release
 
-docker run -d --name httpserver_${tag} -u emo wdzhao11111/daemon:${tag}
+docker run -d --name httpserver_${tag} -u emo -p 9090:8080 wdzhao11111/daemon:${tag}
 
 if [ $? -eq 0 ];then
   echo "Start success!"
