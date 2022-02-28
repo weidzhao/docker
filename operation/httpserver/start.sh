@@ -1,7 +1,7 @@
 #!/bin/bash
 
 version=$1
-sed -ir "s/^export tag\=.*$/export tag\=${version}/g" Makefile
+sed -ri "s/^export tag\=.*$/export tag\=${version}/g" Makefile
 
 tag=${version}
 
