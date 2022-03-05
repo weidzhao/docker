@@ -1,0 +1,78 @@
+###docker知识点记录
+
+---linux对namespace的操作
+clone: 在创建新进程的系统调用时，可以通过flags参数指定需要新建的namespace类型
+setns：该系统调用可以让调用进程加入某个已经存在的namespace中
+unshare：该系统调用可以将调用进程移动到新的namespace下
+
+---namespace
+IPC：System V IPC和POSIX消息队列
+Network：网络设备、网络协议栈、网络端口等
+PID：进程
+Mount：挂载点
+UTS：主机名和域名
+USR：用户名和组
+
+---namespace常用操作
+lsns -t<type> 查看当前系统的namespace
+ls -la /proc/<pid>/ns/ 查看进程的namespace
+nsenter -t<pid> -n ip addr 进入进程网络命名空间执行命令
+
+---cgroups
+不同资源的具体管理工作相应的cgroup子系统(subsystem)来实现
+针对不同类型的资源限制，只要将限制策略在不同的子系统上进行关联即可
+cgroups在不同的系统资源管理子系统中以层级树(hierarchy)的方式组织管理，每个cgroup都可以包含其他的子cgroup，因此cgroup能使用的资源除了受本cgroup配置的资源参数限制，还受到父cgroup设置的资源限制
+
+---cgroups实现了对资源的配额和度量
+blkio：这个子系统设置限制每个块设备的输入输出控制。
+cpu：这个子系统使用调度为cgroup任务提供CPU的访问
+cpuacct：产生cgroup任务的CPU资源报告
+cpuset：如果多核心的CPU，这个子系统会为cgroup任务分配单独的CPU和内存
+devices：允许或拒绝cgroup任务对设备的访问
+freezer：暂停和恢复cgroup任务
+memory：设置每个cgroup的内存限制以及产生内存资源报告
+net_cls：标记每个网络以供cgroup方便使用
+ns：名称空间子系统
+pid：进程标识子系统
+
+---cgroup driver
+systemd:
+当操作系统使用systemd作为init system时，初始化进程生成一个根cgroup目录结构并作为cgroup管理器
+system与cgroup紧密结合，并且为每个systemd unit分配cgroup
+cgroupfs:
+docker默认用cgroupfs作为cgroup驱动
+问题：当系统中docker与kubelet管理的进程被cgroupfs驱动管理，而systemd拉起的服务由systemd驱动管理，让cgroup管理混乱且容易在资源紧张时引发问题。因此kubelet会默认--cgroup-driver=systemd，诺运行时cgroup不一致，kubelet会报错
+
+---docker网络
+null：把容器放入独立的网络空间但不做任何网络配置，用户需要通过运行docker network命令来完成网络配置
+host：使用主机网络命名空间，复用主机网络
+container：重用其他容器网络
+bridge：使用linux网桥和iptables提供容器互联，docker在每台主机上创建一个名为docker0的网桥，通过veth pair来连接该主机的每个endpoint
+
+---null模式实现网络互通
+mkdir -p /var/run/netns
+find -L /var/run/netns -type l -delete
+ln -s /proc/$pid/ns/net /var/run/netns/$pid
+ip link add A type veth peer name B
+brctl addif br0 A
+ip link set A up
+ip link set B netns $pid
+ip netns exec $pid ip link set dev B name eth0
+ip netns exec $pid ip link set eth0 up
+ip netns exec $pid ip addr add $SETIP/$SETMASK dev eth0
+ip netns exec $pid ip route add default via $GATEWAY
+
+---dockerfile多段构建
+FROM golang:1.16-apline AS build
+RUN apk add --no-cache git
+RUN go get github.com/golang/dep/cmd/dep/
+COPY Gopkg.lock Gopkg.toml /go/src/project/
+WORKDIR /go/src/project/
+RUN dep ensure-vender-only
+COPY . /go/src/project/
+RUN go build -o /bin/project/
+
+FROM scratch
+COPY --from=build /bin/project /bin/project
+ENTRYPOINT ["/bin/project"]
+CMD ["--help"]
